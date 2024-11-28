@@ -1,0 +1,71 @@
+#%%
+import requests
+import pandas as pd
+
+# Define the base URL for the ClinicalTrials.gov API
+base_url = "https://clinicaltrials.gov/api/v2/studies"
+
+# Define search parameters
+params = {
+    "query.cond": "Alzheimer's disease AND Down syndrome",  # Search for both conditions
+    "format": "json",  # Specify response format
+    "pageSize": 100,  # Number of results per page
+}
+
+# Make the API request
+response = requests.get(base_url, params=params)
+
+# Check if the request was successful
+if response.status_code == 200:
+    # Parse the JSON response
+    data = response.json()
+    studies = data.get("studies", [])
+    
+    # Check if studies are present
+    if not studies:
+        print("No studies found for the specified query.")
+    else:
+        # Extract relevant details from each study
+        trials = []
+        for study in studies:
+            # Extract nested data
+            protocol_section = study.get("protocolSection", {})
+            identification = protocol_section.get("identificationModule", {})
+            status = protocol_section.get("statusModule", {})
+            conditions = protocol_section.get("conditionsModule", {})
+            design = protocol_section.get("designModule", {})
+            locations_data = protocol_section.get("contactsLocationsModule", {}).get("locations", [])
+
+            # Filter for Interventional studies
+            if design.get("studyType", "").lower() != "interventional":
+                continue
+
+            # Extract data into trial_info
+            trial_info = {
+                "NCT_ID": identification.get("nctId", "N/A"),
+                "Title": identification.get("officialTitle", identification.get("briefTitle", "N/A")),
+                "Recruitment_Status": status.get("overallStatus", "N/A"),
+                "Conditions": ", ".join(conditions.get("conditions", [])) if conditions else "N/A",
+                "Study_Type": design.get("studyType", "N/A"),
+                "Locations": ", ".join(
+                    [
+                        f"{loc.get('facility', 'N/A')} ({loc.get('city', 'N/A')}, {loc.get('state', 'N/A')}, {loc.get('country', 'N/A')})"
+                        for loc in locations_data
+                    ]
+                ) if locations_data else "N/A",
+            }
+            trials.append(trial_info)
+
+        # Convert the trials list to a pd datafframe
+        df = pd.DataFrame(trials)
+
+        # Save the results to a CSV file
+        csv_filename = "alzheimers_downsyndrome_interventional_trials.csv"
+        df.to_csv(csv_filename, index=False)
+        print(f"Saved {len(trials)} interventional trials to {csv_filename}.")
+else:
+    # Print error message and response details for debugging
+    print(f"Error: Unable to fetch data. Status code {response.status_code}")
+    print("Response Text:", response.text)
+
+# %%
